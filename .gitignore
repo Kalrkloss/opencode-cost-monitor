@@ -5,3 +5,10 @@ venv/
 *.egg-info/
 .pytest_cache/
 .env
+build/
+dist/
+*.spec
+icon.ico
+*.bak
+stderr.txt
+stdout.txt

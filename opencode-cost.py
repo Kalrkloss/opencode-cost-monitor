@@ -41,7 +41,8 @@ def load_pricing(plan="go"):
     """Load pricing table for the given plan ('go' or 'zen')."""
     with open(PRICING_FILE) as f:
         data = json.load(f)
-    return data.get("plans", {}).get(plan, {}).get("models", {}), data.get("plans", {}).get(plan, {}).get("name", plan.capitalize())
+    plan_data = data.get("plans", {}).get(plan, {})
+    return plan_data.get("models", {}), plan_data.get("name", plan.capitalize()), plan_data.get("limits", {})
 
 
 def _parse_model(model_json):
@@ -83,7 +84,16 @@ class SessionData:
         self.active_sessions = 0
         self.plan = "go"
         self.plan_label = "Go"
-        self._pricing, _ = load_pricing("go")
+        self._pricing, _, self._limits = load_pricing("go")
+        self.limit_5h = 0.0
+        self.limit_weekly = 0.0
+        self.limit_monthly = 0.0
+        self.limit_5h_max = 12.0
+        self.limit_weekly_max = 30.0
+        self.limit_monthly_max = 60.0
+        self.limit_warn = 75
+        self.limit_alert = 90
+        self.limit_critical = 100
         self._db_path = db_path
 
     def refresh(self):
@@ -136,7 +146,7 @@ class SessionData:
         """
         if plan:
             self.plan = plan
-            self._pricing, self.plan_label = load_pricing(plan)
+            self._pricing, self.plan_label, self._limits = load_pricing(plan)
         now = datetime.now(timezone.utc)
         cutoff = {
             "all": None,
@@ -222,6 +232,29 @@ class SessionData:
         self.active_sessions = sum(
             1 for s in sessions_list
             if s["created"] and s["created"] >= recent_cutoff
+        )
+
+        # Go plan limits
+        self.limit_5h_max = self._limits.get("5hour", 0)
+        self.limit_weekly_max = self._limits.get("weekly", 0)
+        self.limit_monthly_max = self._limits.get("monthly", 0)
+
+        now = datetime.now(timezone.utc)
+        h5_cutoff = now - timedelta(hours=5)
+        week_cutoff = now - timedelta(days=7)
+        month_cutoff = now - timedelta(days=30)
+        all_sessions = self._all_sessions
+        self.limit_5h = sum(
+            s["cost"] for s in all_sessions
+            if s["created"] and s["created"] >= h5_cutoff
+        )
+        self.limit_weekly = sum(
+            s["cost"] for s in all_sessions
+            if s["created"] and s["created"] >= week_cutoff
+        )
+        self.limit_monthly = sum(
+            s["cost"] for s in all_sessions
+            if s["created"] and s["created"] >= month_cutoff
         )
 
 
@@ -439,6 +472,17 @@ class CostMonitor(App):
         self._time_modes = ["all", "month", "week", "day"]
         self._time_labels = {"all": "All Time", "month": "Last 30d", "week": "Last 7d", "day": "Today"}
 
+    def _limit_color(self, pct):
+        """Return color for limit percentage based on thresholds."""
+        d = self.data
+        if pct >= d.limit_critical:
+            return "red"
+        if pct >= d.limit_alert:
+            return "orange"
+        if pct >= d.limit_warn:
+            return "yellow"
+        return "white"
+
     def compose(self):
         yield Static(self.TITLE, id="title-bar")
 
@@ -464,6 +508,11 @@ class CostMonitor(App):
             yield DataTable(id="model-table", show_cursor=False)
 
         with Horizontal(id="bottom-panel"):
+            with Container(classes="bottom-box", id="limits-box"):
+                yield Static("Go Limits", id="limits-label", classes="stat-label")
+                yield Static("", id="limit-5h")
+                yield Static("", id="limit-weekly")
+                yield Static("", id="limit-monthly")
             with Container(id="trend-box"):
                 yield Static("Daily Cost Trend", id="trend-label", classes="stat-label")
                 yield Static("", id="trend-spark", classes="sparkline-text")
@@ -614,6 +663,33 @@ class CostMonitor(App):
         self.query_one("#last-time", Static).update(
             f"Updated: {d.last_updated}"
         )
+
+        # ── Go limits ──
+        limits_box = self.query_one("#limits-box")
+        if d.plan == "go":
+            limits_box.display = True
+            pct5 = d.limit_5h / d.limit_5h_max * 100 if d.limit_5h_max > 0 else 0
+            color5 = self._limit_color(pct5)
+            self.query_one("#limit-5h", Static).update(
+                f"5h: {_fmt_dollar(d.limit_5h)} / {_fmt_dollar(d.limit_5h_max)} ({_fmt_pct(pct5)})"
+            )
+            self.query_one("#limit-5h").styles.color = color5
+
+            pctw = d.limit_weekly / d.limit_weekly_max * 100 if d.limit_weekly_max > 0 else 0
+            colorw = self._limit_color(pctw)
+            self.query_one("#limit-weekly", Static).update(
+                f"Week: {_fmt_dollar(d.limit_weekly)} / {_fmt_dollar(d.limit_weekly_max)} ({_fmt_pct(pctw)})"
+            )
+            self.query_one("#limit-weekly").styles.color = colorw
+
+            pctm = d.limit_monthly / d.limit_monthly_max * 100 if d.limit_monthly_max > 0 else 0
+            colorm = self._limit_color(pctm)
+            self.query_one("#limit-monthly", Static).update(
+                f"Month: {_fmt_dollar(d.limit_monthly)} / {_fmt_dollar(d.limit_monthly_max)} ({_fmt_pct(pctm)})"
+            )
+            self.query_one("#limit-monthly").styles.color = colorm
+        else:
+            limits_box.display = False
 
         # ── Footer ──
         status = f" Polling every 3s · {d.active_sessions} active (last 5min)"

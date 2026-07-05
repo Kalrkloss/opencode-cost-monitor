@@ -4,6 +4,11 @@
       "name": "Go",
       "description": "$10/month subscription with included usage. Cached read on DeepSeek models is 10x cheaper than Zen.",
       "url": "https://opencode.ai/go",
+      "limits": {
+        "5hour": 12,
+        "weekly": 30,
+        "monthly": 60
+      },
       "models": {
         "deepseek-v4-flash": {
           "input": 0.14,
