@@ -373,9 +373,8 @@ class TrayApp:
         self.data.recompute(self._time_mode)
 
         self._build_window()
-        self._schedule_poll()
-
         self.icon = self._build_icon()
+        self._schedule_poll()
 
     def _limit_color(self, pct):
         """Return color for limit percentage based on thresholds."""
@@ -930,6 +929,8 @@ class TrayApp:
 
         if self.window.winfo_exists() and self.window.state() != "withdrawn":
             self._update_window()
+
+        self._update_tray_icon()
 
         self.window.after(3000, self._schedule_poll)
 
