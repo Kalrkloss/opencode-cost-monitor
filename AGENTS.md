@@ -4,8 +4,9 @@ Live TUI that watches opencode.db and shows real-time cost stats, model breakdow
 
 ## Remotes
 
-Push to **both** on every change:
-- `github.com/MikeCase/opencode-cost-monitor.git`
+Push to **all** on every change:
+- `github.com/Kalrkloss/opencode-cost-monitor.git` (fork)
+- `github.com/MikeCase/opencode-cost-monitor.git` (upstream)
 - `fj.splaq.us/splaq/opencode-cost-monitor.git`
 
 ## Stack & Key Files
